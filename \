@@ -14,25 +14,20 @@
 
 #define get_u_int16_t(X,O)  (*(uint16_t *)(((uint8_t *)X) + O))
 
-#define IP_ADDR_LEN 15
-
-struct psd_header 
-{
-	unsigned int saddr;
-	unsigned int daddr;
-	unsigned char mbz;
-	unsigned char protocol;
-	unsigned short len;
-};
-
-
+int count = 0;
 
 void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr *packet_header,const unsigned char *packet_content)  
 {   
+	count++;
+    	if(count == 10000) {
+		printf("%d\n",count);
+        	count = 0;
+    	}
+    
 	struct ethhdr *ether_header = (struct ethhdr*)packet_content; 
     	struct iphdr *ip_header = (struct iphdr*)(packet_content + sizeof(struct ethhdr));
     	struct tcphdr *tcp_header = (struct tcphdr*)(packet_content + sizeof(struct ethhdr) + sizeof(struct iphdr));
-	char payload[BUFSIZE];
+	char payload[10240];
     	
 	struct in_addr addr;
 
@@ -47,7 +42,7 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 	    		addr.s_addr = ip_header->daddr;
 	    		char dstIP[32];
 	    		strcpy(dstIP, inet_ntoa(addr)); 
-			
+            		
 			u_int32_t payload_offset = sizeof(struct ethhdr);
 	    		payload_offset += sizeof(struct iphdr);
 	    		payload_offset += (tcp_header->doff << 2); 
@@ -57,10 +52,11 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 	    		//const unsigned char *payload = packet_content + payload_offset;
 			payload[payload_len] = '\0';
 			
+    	    		/*filter get packet*/
             		if(memcmp(payload, "GET ", 4)) 
 			{
 				return;
-            		}	
+            		}		
 	    
 	    		int line_len;
             		int hstrlen; //"host: " 
@@ -99,12 +95,12 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 	    		url[hostlen] = '\0';
 
 	    		//printf("%s\n",payload);
-	    		//printf("----------------------------------------------------\n");  
+	    		//printf("\n----------------------------------------------------\n");  
 	    		//printf("%s\n", ctime((time_t *)&(packet_header->ts.tv_sec)));   
             		//printf("SrcIP and SrcPort is %s:%d\n",srcIP,ntohs(tcp_header->source));
 	    		//printf("DstIP and DstPort is %s:%d\n",dstIP,ntohs(tcp_header->dest));
  	    		//printf("host is %s\n", host);
-	
+			
 			const char *resp_payload= "HTTP/1.1 302 FOUND\r\nServer: nginx/1.1.15\r\nContent-Type: text/html; charset=utf-8\r\nConnection: keep-alive\r\nLocation: http://www.qq.com/\r\n\r\n";
 		
 			int resp_offset = 0;
@@ -120,9 +116,7 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 
 			//iphdr
 			memcpy(resp_packet + resp_offset, ip_header, sizeof(struct iphdr));		
-
-			__be16 resp_tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + strlen(resp_payload));
-			memcpy(resp_packet + resp_offset + 2 * sizeof(__u8), &resp_tot_len, sizeof(__be16));			
+			
 			memcpy(resp_packet + resp_offset + sizeof(struct iphdr) - 2 * sizeof(__be32), &(ip_header->daddr), sizeof(__be32));
 			memcpy(resp_packet + resp_offset + sizeof(struct iphdr) - sizeof(__be32), &(ip_header->saddr), sizeof(__be32));
 			
@@ -133,42 +127,28 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 			
 			memcpy(resp_packet + resp_offset, &(tcp_header->dest), sizeof(__be16));
 			memcpy(resp_packet + resp_offset + sizeof(__be16), &(tcp_header->source), sizeof(__be16));	
+			__be16 resp_ack = tcp_header->seq + strlen(resp_payload);
 			memcpy(resp_packet + resp_offset + 2 * sizeof(__be16), &(tcp_header->ack_seq), sizeof(__be32));
-			memcpy(resp_packet + resp_offset + 2 * sizeof(__be16) + sizeof(__be32), &(tcp_header->seq), sizeof(__be32));
-		
+			memcpy(resp_packet + resp_offset + 2 * sizeof(__be16) + sizeof(__be32), &resp_ack, sizeof(__be32));
+			
 			resp_offset += sizeof(struct tcphdr);	
 
 			//payload
 			memcpy(resp_packet + resp_offset, resp_payload, strlen(resp_payload));
 
 			struct iphdr *resp_ip_header = (struct iphdr*)(resp_packet + sizeof(struct ethhdr));
-			resp_ip_header->check = htons(get_ip_checksum((char*)resp_ip_header));
-			char *s_ip_header_id = (char*)&resp_ip_header->id;
-			*s_ip_header_id = 0x00; 			
-			*(s_ip_header_id + 1) = 0x01;
-			
+			char resp_sIP[32], resp_dIP[32];
+			struct in_addr resp_addr;
+			resp_addr.s_addr = resp_ip_header->saddr;
+			strcpy(resp_sIP, inet_ntoa(resp_addr));
+			resp_addr.s_addr = resp_ip_header->daddr;
+			strcpy(resp_dIP, inet_ntoa(resp_addr));	
 			struct tcphdr *resp_tcp_header = (struct tcphdr*)(resp_packet + sizeof(struct ethhdr) + sizeof(struct iphdr));
-			__be16 resp_tcp_header_doff = 21;
-			resp_tcp_header->doff = resp_tcp_header_doff;
-			
-			psdhdr psd_header;
-			psd.saddr = 
-			psd.daddr = 
-			psd.mbz = 0;
-			psd.protocal = IPPROTO_TCP;
-			psd.tcpl = htons(20);
-						
-
-			char *s_check = (char*)&resp_tcp_header->check;
-			printf("%0x %0x\n", *s_check, *(s_check+1));
+			printf("%s:%d  %s:%d  %d  %d\n", resp_sIP, ntohs(resp_tcp_header->source), resp_dIP, ntohs(resp_tcp_header->dest), resp_offset, strlen(resp_payload));		
 
 			char error_content[100];
 			pcap_t *pcap_handle = pcap_open_live("em2", BUFSIZE, 1, 0, error_content);
-			if(pcap_sendpacket(pcap_handle, resp_packet, resp_offset + strlen(resp_payload)) < 0)
-			{
-				perror("pcap_sendpacket");
-			}
-			pcap_close(pcap_handle);
+			pcap_sendpacket(pcap_handle, resp_packet, resp_offset);
 			printf("send 1 packet!\n");
 
             		break;//ip  
