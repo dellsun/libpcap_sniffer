@@ -14,9 +14,7 @@
 
 #define get_u_int16_t(X,O)  (*(uint16_t *)(((uint8_t *)X) + O))
 
-#define IP_ADDR_LEN 15
-
-struct psd_header 
+struct psdhdr 
 {
 	unsigned int saddr;
 	unsigned int daddr;
@@ -25,7 +23,27 @@ struct psd_header
 	unsigned short len;
 };
 
+unsigned short checksum(unsigned short *buffer, int size)
+{
+        unsigned long sum = 0;
 
+        while (size > 1)
+        {
+		//printf("%0x\n", *buffer);
+                sum += *buffer++;
+                size -= sizeof(unsigned short);
+	}
+
+        if (size)
+        {
+                sum += *(unsigned char*)buffer;
+        }
+       
+	sum = (sum >> 16) + (sum & 0xFFFF);
+	sum += (sum >> 16);
+       
+        return (unsigned short)~sum;
+}
 
 void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr *packet_header,const unsigned char *packet_content)  
 {   
@@ -142,25 +160,29 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 			memcpy(resp_packet + resp_offset, resp_payload, strlen(resp_payload));
 
 			struct iphdr *resp_ip_header = (struct iphdr*)(resp_packet + sizeof(struct ethhdr));
-			resp_ip_header->check = htons(get_ip_checksum((char*)resp_ip_header));
-			char *s_ip_header_id = (char*)&resp_ip_header->id;
-			*s_ip_header_id = 0x00; 			
-			*(s_ip_header_id + 1) = 0x01;
+			resp_ip_header->id = 0x0100;
+			resp_ip_header->check = 0x0000;
+			resp_ip_header->check = checksum((unsigned short*)resp_ip_header, sizeof(struct iphdr));
 			
 			struct tcphdr *resp_tcp_header = (struct tcphdr*)(resp_packet + sizeof(struct ethhdr) + sizeof(struct iphdr));
 			__be16 resp_tcp_header_doff = 21;
 			resp_tcp_header->doff = resp_tcp_header_doff;
-			
-			psdhdr psd_header;
-			psd.saddr = 
-			psd.daddr = 
-			psd.mbz = 0;
-			psd.protocal = IPPROTO_TCP;
-			psd.tcpl = htons(20);
-						
-
-			char *s_check = (char*)&resp_tcp_header->check;
-			printf("%0x %0x\n", *s_check, *(s_check+1));
+			resp_tcp_header->check = 0x0000;
+			struct psdhdr *psd_header = malloc(sizeof(struct psdhdr));
+			memset(psd_header, 0, sizeof(struct psdhdr));
+			psd_header->saddr = resp_ip_header->saddr;
+			psd_header->daddr = resp_ip_header->daddr;
+			psd_header->mbz = 0;
+			psd_header->protocol = 0x06;
+			psd_header->len = 0x9e00;
+			char *tmp_packet = malloc(sizeof(struct psdhdr) + sizeof(struct tcphdr) + strlen(resp_payload));
+			memset(tmp_packet, 0, sizeof(struct psdhdr) + sizeof(struct tcphdr));
+			memcpy(tmp_packet, psd_header, sizeof(struct psdhdr)); 	
+			memcpy(tmp_packet + sizeof(struct psdhdr), resp_tcp_header, sizeof(struct tcphdr));
+			memcpy(tmp_packet + sizeof(struct psdhdr) + sizeof(struct tcphdr), resp_payload, strlen(resp_payload));
+			resp_tcp_header->check = checksum((unsigned short*)tmp_packet, sizeof(struct psdhdr) + sizeof(struct tcphdr) + strlen(resp_payload));
+			free(psd_header);
+			free(tmp_packet);
 
 			char error_content[100];
 			pcap_t *pcap_handle = pcap_open_live("em2", BUFSIZE, 1, 0, error_content);
