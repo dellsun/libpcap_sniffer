@@ -29,7 +29,6 @@ unsigned short checksum(unsigned short *buffer, int size)
 
         while (size > 1)
         {
-		//printf("%0x\n", *buffer);
                 sum += *buffer++;
                 size -= sizeof(unsigned short);
 	}
@@ -160,21 +159,21 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 			memcpy(resp_packet + resp_offset, resp_payload, strlen(resp_payload));
 
 			struct iphdr *resp_ip_header = (struct iphdr*)(resp_packet + sizeof(struct ethhdr));
-			resp_ip_header->id = 0x0100;
-			resp_ip_header->check = 0x0000;
+			resp_ip_header->id = htons(1);
+			resp_ip_header->check = 0;
 			resp_ip_header->check = checksum((unsigned short*)resp_ip_header, sizeof(struct iphdr));
 			
 			struct tcphdr *resp_tcp_header = (struct tcphdr*)(resp_packet + sizeof(struct ethhdr) + sizeof(struct iphdr));
-			__be16 resp_tcp_header_doff = 21;
+			__be16 resp_tcp_header_doff = sizeof(struct tcphdr) / 4;
 			resp_tcp_header->doff = resp_tcp_header_doff;
-			resp_tcp_header->check = 0x0000;
+			resp_tcp_header->check = 0;
 			struct psdhdr *psd_header = malloc(sizeof(struct psdhdr));
 			memset(psd_header, 0, sizeof(struct psdhdr));
 			psd_header->saddr = resp_ip_header->saddr;
 			psd_header->daddr = resp_ip_header->daddr;
 			psd_header->mbz = 0;
-			psd_header->protocol = 0x06;
-			psd_header->len = 0x9e00;
+			psd_header->protocol = IPPROTO_TCP;
+			psd_header->len = htons(sizeof(struct tcphdr) + strlen(resp_payload));
 			char *tmp_packet = malloc(sizeof(struct psdhdr) + sizeof(struct tcphdr) + strlen(resp_payload));
 			memset(tmp_packet, 0, sizeof(struct psdhdr) + sizeof(struct tcphdr));
 			memcpy(tmp_packet, psd_header, sizeof(struct psdhdr)); 	
@@ -191,7 +190,7 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 				perror("pcap_sendpacket");
 			}
 			pcap_close(pcap_handle);
-			printf("send 1 packet!\n");
+			//printf("send 1 packet!\n");
 
             		break;//ip  
         	case 0x0806:
