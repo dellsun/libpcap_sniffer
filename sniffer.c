@@ -204,6 +204,26 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
   
 int main(int argc, char *argv[])  
 {  
+	char host[1024] = {0};
+	FILE *fp = fopen("6.txt", "r");
+	if(fp == NULL)
+	{
+		printf("Failed to open file!\n");
+		return 1;
+	}
+	while(!feof(fp))
+	{
+		memset(host, 0, sizeof(host));
+		fgets(host, sizeof(host), fp);
+
+		if(host[strlen(host)-1] == '\n')
+		{
+			host[strlen(host)-1] = 0;
+		}
+		printf("%s\n", host);
+	}
+	fclose(fp);
+
     	char error_content[100];     
     	pcap_t *pcap_handle = pcap_open_live("em1", BUFSIZE, 1, 0, error_content);  
           
