@@ -97,7 +97,7 @@ HashNode* hash_table_find(const char* key)
         	while(pHead)
         	{
             		if(strcmp(key, pHead->key) == 0)
-                	return pHead;
+                		return pHead;
             		pHead = pHead->pNext;
         	}
     	}
