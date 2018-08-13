@@ -1,3 +1,3 @@
 #!/bin/sh
 
-gcc hash_table.c sniffer.c -o sniffer -lpcap
+gcc hash_table.c tzt.c -o tzt -lpcap
