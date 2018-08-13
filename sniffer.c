@@ -6,6 +6,7 @@
 #include <linux/if_ether.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
+#include "hash_table.h"
 
 #define BUFSIZE 10240
 #define MAX_URL_LEN 2048
@@ -120,8 +121,29 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 	    		//printf("%s\n", ctime((time_t *)&(packet_header->ts.tv_sec)));   
             		//printf("SrcIP and SrcPort is %s:%d\n",srcIP,ntohs(tcp_header->source));
 	    		//printf("DstIP and DstPort is %s:%d\n",dstIP,ntohs(tcp_header->dest));
- 	    		//printf("host is %s\n", host);
-	
+ 	    		printf("host is %s\n", host);
+
+			HashNode *hn = hash_table_find(url);
+			if(hn == NULL) {
+				if(memcmp(url, "www.", 4)) 
+				{
+					char fixed_url[MAX_URL_LEN];
+					memcpy(fixed_url, "www.", 4);
+					memcpy(fixed_url + 4, url, strlen(url));
+					hn = hash_table_find(fixed_url);
+					if(hn == NULL)
+						return;
+				} 
+				else 
+				{
+					char fixed_url[MAX_URL_LEN];
+					memcpy(fixed_url, url + 4, strlen(url) - 4);
+					hn = hash_table_find(fixed_url);
+					if(hn == NULL)
+						return;
+				}
+			}
+
 			const char *resp_payload= "HTTP/1.1 302 FOUND\r\nServer: nginx/1.1.15\r\nContent-Type: text/html; charset=utf-8\r\nConnection: keep-alive\r\nLocation: http://www.qq.com/\r\n\r\n";
 		
 			int resp_offset = 0;
@@ -190,6 +212,7 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
 				perror("pcap_sendpacket");
 			}
 			pcap_close(pcap_handle);
+
 			//printf("send 1 packet!\n");
 
             		break;//ip  
@@ -204,6 +227,8 @@ void ethernet_protocol_callback(unsigned char *argument,const struct pcap_pkthdr
   
 int main(int argc, char *argv[])  
 {  
+	hash_table_init();
+
 	char host[1024] = {0};
 	FILE *fp = fopen("6.txt", "r");
 	if(fp == NULL)
@@ -220,9 +245,13 @@ int main(int argc, char *argv[])
 		{
 			host[strlen(host)-1] = 0;
 		}
-		printf("%s\n", host);
+		printf("%s ---\n", host);
+		hash_table_insert(host, 0);
 	}
 	fclose(fp);
+	HashNode *hn = hash_table_find("www.144666.com");
+	if(hn != NULL)
+		printf("%s %d", hn->key, hn->value);
 
     	char error_content[100];     
     	pcap_t *pcap_handle = pcap_open_live("em1", BUFSIZE, 1, 0, error_content);  
